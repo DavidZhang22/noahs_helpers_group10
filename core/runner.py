@@ -1,0 +1,80 @@
+import random
+
+from core.animal import Gender, Animal
+from core.ark import Ark
+from core.engine import Engine
+from core.player import Player
+from core.ui.ark_ui import ArkUI
+from core.cell import Cell
+
+import core.constants as c
+
+
+class ArkRunner:
+    def __init__(
+        self,
+        player_class: type[Player],
+        num_helpers: int,
+        animals: list[int],
+        time: int,
+    ):
+        self.player_class = player_class
+        self.num_helpers = num_helpers
+        self.animals = animals
+        self.time = time
+
+    def setup_engine(self) -> Engine:
+        self.grid = [[Cell(row, col) for col in range(c.Y)] for row in range(c.X)]
+
+        # link neighbouring cells
+        for y in range(c.Y):
+            for x in range(c.X):
+                cell = self.grid[y][x]
+                if y < c.Y - 1:
+                    cell.down = self.grid[y + 1][x]
+                if x < c.X - 1:
+                    cell.right = self.grid[y][x + 1]
+                if y > 0:
+                    cell.up = self.grid[y - 1][x]
+                if x > 0:
+                    cell.down = self.grid[y][x - 1]
+
+        # generate animals in landscape
+        for species_id, count in enumerate(self.animals):
+            first_male = Animal(species_id, Gender.Male)
+            first_female = Animal(species_id, Gender.Female)
+            group = [first_male, first_female]
+
+            for _ in range(count - 2):
+                if random.random() < 0.5:
+                    group.append(Animal(species_id, Gender.Female))
+                else:
+                    group.append(Animal(species_id, Gender.Male))
+
+            # place animals in random cells
+            for animal in group:
+                x, y = random.randint(0, c.X - 1), random.randint(0, c.Y - 1)
+                self.grid[y][x].animals.append(animal)
+
+        ark_x = random.randint(0, c.X - 1)
+        ark_y = random.randint(0, c.Y - 1)
+        self.ark_position = (ark_x, ark_y)
+        self.helpers = [
+            self.player_class(ark_x, ark_y) for _ in range(self.num_helpers)
+        ]
+        self.ark = Ark(ark_x, ark_y)
+
+        engine = Engine(self.grid, self.ark, self.helpers, self.time)
+
+        return engine
+
+    def run(self) -> dict:
+        engine = self.setup_engine()
+        engine.run_simulation()
+
+        return {}
+
+    def run_gui(self):
+        engine = self.setup_engine()
+        visualizer = ArkUI(engine)
+        visualizer.run()

@@ -1,0 +1,8 @@
+X = Y = 50
+
+MAX_ANIMALS_PER_HELPER = 4
+
+# MIN_T = 2016
+MIN_T = 16
+MAX_T = MIN_T * 2
+START_RAIN = MIN_T / 2
