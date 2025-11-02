@@ -10,5 +10,5 @@ class Message:
     contents: int
 
     def __post_init__(self) -> None:
-        if not (0 <= self.contents < (1 << c.ONE_BYTE)):
+        if not (0 <= self.contents < c.ONE_BYTE):
             raise Exception("message does not fit in one byte")

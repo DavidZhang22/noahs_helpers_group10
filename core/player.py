@@ -16,7 +16,7 @@ class Player(ABC):
         self.id = id
         self.ark_position = (ark_x, ark_y)
         self.position = (float(ark_x), float(ark_y))
-        self.flock: list[Animal] = []
+        self.flock: set[Animal] = set()
 
     def __str__(self) -> str:
         return f"{self.__module__}(id={self.id})"
@@ -50,13 +50,15 @@ class Player(ABC):
 
     @final
     def is_message_valid(self, msg: int) -> bool:
-        return 0 <= msg < (1 << c.ONE_BYTE)
+        return 0 <= msg < c.ONE_BYTE
 
     @final
     def can_move_to(self, x: float, y: float) -> bool:
-        curr_x, curr_y = self.position
+        if not (0 <= x < c.X and 0 <= y < c.Y):
+            return False
 
-        return (abs(curr_x - x) ** 2 + abs(curr_y - y) ** 2) * 0.5 <= 1
+        curr_x, curr_y = self.position
+        return (abs(curr_x - x) ** 2 + abs(curr_y - y) ** 2) * 0.5 <= c.MAX_DISTANCE_KM
 
     @abstractmethod
     def check_surroundings(self, snapshot: HelperSurroundingsSnapshot) -> int:

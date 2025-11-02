@@ -42,6 +42,8 @@ class ArkRunner:
                     cell.down = self.grid[y][x - 1]
 
         # generate animals in landscape
+        animals: dict[Animal, Cell] = {}
+
         for species_id, count in enumerate(self.animals):
             first_male = Animal(species_id, Gender.Male)
             first_female = Animal(species_id, Gender.Female)
@@ -56,7 +58,9 @@ class ArkRunner:
             # place animals in random cells
             for animal in group:
                 x, y = random.randint(0, c.X - 1), random.randint(0, c.Y - 1)
-                self.grid[y][x].animals.add(animal)
+                cell = self.grid[y][x]
+                cell.animals.add(animal)
+                animals[animal] = cell
 
         self.ark = Ark(self.ark_pos)
 
@@ -64,7 +68,7 @@ class ArkRunner:
             self.player_class(id, *self.ark.position) for id in range(self.num_helpers)
         ]
 
-        engine = Engine(self.grid, self.ark, self.helpers, self.time)
+        engine = Engine(self.grid, self.ark, self.helpers, self.time, animals)
 
         return engine
 

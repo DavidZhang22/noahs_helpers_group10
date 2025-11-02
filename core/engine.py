@@ -1,4 +1,7 @@
+from random import choice, random
+
 from core.action import Move, Obtain, Release
+from core.animal import Animal
 from core.ark import Ark
 from core.message import Message
 from core.player import Player
@@ -16,11 +19,13 @@ class Engine:
         ark: Ark,
         helpers: list[Player],
         time: int,
+        animals: dict[Animal, Cell],
     ) -> None:
         self.grid = grid
         self.ark = ark
         self.helpers = helpers
         self.time = time
+        self.free_animals = animals
 
     def _get_sights(self) -> dict[Player, list[Player]]:
         in_sight: dict[Player, list[Player]] = {helper: [] for helper in self.helpers}
@@ -67,7 +72,7 @@ class Engine:
                     time_elapsed, is_raining, helper.position, sight, helper_ark_view
                 )
                 one_byte_message = helper.check_surroundings(snapshot)
-                if not (0 <= one_byte_message <= c.ONE_BYTE):
+                if not (0 <= one_byte_message < c.ONE_BYTE):
                     raise Exception(
                         f"helper {helper.id} gave incorrect message: {one_byte_message}"
                     )
@@ -89,9 +94,55 @@ class Engine:
                 match action:
                     case Release(animal=a):
                         print(f"{helper.id}: relasing {a}")
+                        helper_x, helper_y = tuple(map(int, helper.position))
+                        cell = self.grid[helper_y][helper_x]
+
+                        if a not in helper.flock:
+                            raise Exception(
+                                f"animal {a} not in helper {helper.id}'s flock"
+                            )
+
+                        helper.flock.remove(a)
+                        self.free_animals[a] = cell
+
                     case Obtain(animal=a):
                         print(f"{helper.id}: obtaining {a}")
+
+                        helper_x, helper_y = tuple(map(int, helper.position))
+                        helper_cell = self.grid[helper_y][helper_x]
+
+                        if len(helper.flock) >= c.MAX_FLOCK_SIZE:
+                            raise Exception(
+                                f"helper {helper.id} tried to obtain animal with full flock"
+                            )
+
+                        if a not in helper_cell.animals:
+                            raise Exception(
+                                f"animal {a} not in helper {helper.id}'s cell {(helper_x, helper_y)}"
+                            )
+
+                        helper_cell.animals.remove(a)
+                        del self.free_animals[a]
+                        helper.flock.add(a)
+
                     case Move(x=x, y=y):
                         print(f"{helper.id}: moving to {(x, y)}")
 
+                        if not helper.can_move_to(x, y):
+                            raise Exception(
+                                f"player cannot move from {helper.position} to {(x, y)}"
+                            )
+
+                        helper.position = (x, y)
+
             # 5. let free animals move with 0.5 probability
+            for animal, cell in self.free_animals.items():
+                if random() < c.ANIMAL_MOVE_PROBABILITY:
+                    neighbor = choice(cell.get_emptiest_neighbors())
+
+                    print(f"{animal} moved: {cell.x, cell.y} -> {neighbor.x, neighbor.y}")
+
+                    cell.animals.remove(animal)
+                    neighbor.animals.add(animal)
+                    # this is ok as we're not changing the keys
+                    self.free_animals[animal] = neighbor
