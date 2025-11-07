@@ -10,16 +10,9 @@ from core.views.player_view import Kind
 import core.constants as c
 
 
-def coords_to_px(x: float, y: float) -> tuple[int, int]:
-    x_px = c.LANDSCAPE_WEST_PX + (c.LANDSCAPE_EAST_PX - c.LANDSCAPE_WEST_PX) * x / c.X
-    y_px = (
-        c.LANDSCAPE_NORTH_PX + (c.LANDSCAPE_SOUTH_PX - c.LANDSCAPE_NORTH_PX) * y / c.Y
-    )
-    return int(x_px), int(y_px)
-
-
 def km_to_px(km: float) -> float:
-    return c.LANDSCAPE_HEIGHT * km / c.Y
+    diff = c.Y // c.MAP_SPLIT
+    return c.LANDSCAPE_HEIGHT * km / diff
 
 
 def is_hovered_circle(
@@ -53,6 +46,95 @@ class ArkUI:
             tuple[tuple[float, float], float], Ark | Player | Animal
         ] = {}
 
+        self.drawn_cells: dict[tuple[tuple[int, int], int], tuple[int, int]] = {}
+
+        self.selected_cell = (
+            self.engine.ark.position[0] // (c.X // c.MAP_SPLIT),
+            self.engine.ark.position[1] // (c.Y // c.MAP_SPLIT),
+        )
+
+        print(f"selected: {self.selected_cell}")
+
+    def coords_fit_in_grid(self, x: float, y: float) -> bool:
+        west_x, east_x, north_y, south_y = self.get_w_e_n_s()
+
+        return west_x <= x <= east_x and north_y <= y <= south_y
+
+    def coords_to_px(self, x: float, y: float) -> tuple[int, int]:
+        if not self.coords_fit_in_grid(x, y):
+            raise Exception(f"tried getting px for coords not in grid: {x, y}")
+
+        west_x, east_x, north_y, south_y = self.get_w_e_n_s()
+
+        rel_x = x - west_x
+        rel_y = y - north_y
+
+        diff_x = east_x - west_x
+        diff_y = south_y - north_y
+
+        x_px = (
+            c.LANDSCAPE_WEST_PX
+            + (c.LANDSCAPE_EAST_PX - c.LANDSCAPE_WEST_PX) * rel_x / diff_x
+        )
+        y_px = (
+            c.LANDSCAPE_NORTH_PX
+            + (c.LANDSCAPE_SOUTH_PX - c.LANDSCAPE_NORTH_PX) * rel_y / diff_y
+        )
+        return int(x_px), int(y_px)
+
+    def draw_map(self):
+        west_px = c.LANDSCAPE_WIDTH + int(
+            ((c.SCREEN_WIDTH + c.MARGIN_X - c.LANDSCAPE_WIDTH) - c.MAP_PX) / 2
+        )
+        north_px = c.SCREEN_HEIGHT - c.MAP_PX - c.MARGIN_Y
+        east_px = west_px + c.MAP_PX
+        south_px = north_px + c.MAP_PX
+
+        # border_rect = pygame.Rect(west_px, north_px, c.MAP_PX, c.MAP_PX)
+        # pygame.draw.rect(self.screen, color, border_rect)  # fill
+        # pygame.draw.rect(self.screen, (0, 0, 0), border_rect, 2)  # border
+
+        for row in range(c.MAP_SPLIT):
+            for col in range(c.MAP_SPLIT):
+                cell_west = west_px + int((east_px - west_px) * col / c.MAP_SPLIT)
+                cell_north = north_px + int((south_px - north_px) * row / c.MAP_SPLIT)
+
+                dim = int(c.MAP_PX / c.MAP_SPLIT)
+                rect = pygame.Rect(cell_west, cell_north, dim, dim)
+
+                color = (
+                    c.DAMP_GRASS_COLOR if self.engine.is_raining() else c.GRASS_COLOR
+                )
+                if (col, row) == self.selected_cell:
+                    r, g, b = color
+                    color = (
+                        min(int(r * c.SELECTED_INCREASE), 255),
+                        min(int(g * c.SELECTED_INCREASE), 255),
+                        min(int(b * c.SELECTED_INCREASE), 255),
+                    )
+
+                pygame.draw.rect(self.screen, color, rect)
+                pygame.draw.rect(self.screen, (0, 0, 0), rect, 1)
+
+                self.drawn_cells[((cell_west, cell_north), dim)] = (col, row)
+
+            # line = "X"
+            # if i:
+            #     val = c.X * i / c.MAP_SPLIT
+            #     line = f"{int(val)}" if val.is_integer() else f"{val:.1f}"
+            # write_at(self.screen, self.tiny_font, line, (x, c.MARGIN_Y - 20))
+
+    def get_w_e_n_s(self) -> tuple[int, int, int, int]:
+        west_x, north_y = self.selected_cell
+        east_x, south_y = west_x + 1, north_y + 1
+
+        west_x *= c.X // c.MAP_SPLIT
+        north_y *= c.Y // c.MAP_SPLIT
+        east_x *= c.X // c.MAP_SPLIT
+        south_y *= c.Y // c.MAP_SPLIT
+
+        return west_x, east_x, north_y, south_y
+
     def draw_grid(self):
         """Draw garden boundaries and grid."""
         border_rect = pygame.Rect(
@@ -61,6 +143,8 @@ class ArkUI:
         color = c.DAMP_GRASS_COLOR if self.engine.is_raining() else c.GRASS_COLOR
         pygame.draw.rect(self.screen, color, border_rect)  # fill
         pygame.draw.rect(self.screen, (0, 0, 0), border_rect, 2)  # border
+
+        west_x, east_x, north_y, south_y = self.get_w_e_n_s()
 
         for i in range(c.NUM_GRID_LINES + 1):
             x = c.MARGIN_X + int(c.LANDSCAPE_WIDTH * i / c.NUM_GRID_LINES)
@@ -76,7 +160,7 @@ class ArkUI:
 
             line = "X"
             if i:
-                val = c.X * i / c.NUM_GRID_LINES
+                val = west_x + (east_x - west_x) * i / c.NUM_GRID_LINES
                 line = f"{int(val)}" if val.is_integer() else f"{val:.1f}"
             write_at(self.screen, self.tiny_font, line, (x, c.MARGIN_Y - 20))
 
@@ -93,7 +177,7 @@ class ArkUI:
 
             line = "Y"
             if i:
-                val = c.Y * i / c.NUM_GRID_LINES
+                val = north_y + (south_y - north_y) * i / c.NUM_GRID_LINES
                 line = f"{int(val)}" if val.is_integer() else f"{val:.1f}"
             write_at(
                 self.screen, self.tiny_font, line, (c.MARGIN_X - 10, y), align="right"
@@ -101,7 +185,10 @@ class ArkUI:
 
     def draw_ark(self):
         ark_x, ark_y = self.engine.ark.position
-        ark_center = coords_to_px(ark_x, ark_y)
+        if not self.coords_fit_in_grid(ark_x, ark_y):
+            return
+
+        ark_center = self.coords_to_px(ark_x, ark_y)
 
         ark_img_orig = pygame.image.load("sprites/ark.png").convert_alpha()
         ark_img = pygame.transform.scale(
@@ -182,9 +269,12 @@ class ArkUI:
     def draw_helpers(self):
         for helper in self.engine.helpers:
             helper_x, helper_y = helper.position
-            helper_center = coords_to_px(helper_x, helper_y)
+            if not self.coords_fit_in_grid(helper_x, helper_y):
+                continue
 
-            helper.draw(self.screen, self.small_font, helper_center)
+            helper_center = self.coords_to_px(helper_x, helper_y)
+
+            helper.draw(self.screen, self.big_font, helper_center)
             self.drawn_objects[(helper_center, c.HELPER_RADIUS)] = helper
 
     def draw_hovered_helper(self, helper: Player):
@@ -228,9 +318,11 @@ class ArkUI:
 
     def draw_animals(self):
         for animal, cell in self.engine.free_animals.items():
-            animal_center = coords_to_px(cell.x, cell.y)
+            if not self.coords_fit_in_grid(cell.x, cell.y):
+                continue
+            animal_center = self.coords_to_px(cell.x, cell.y)
 
-            animal.draw(self.screen, self.small_font, animal_center)
+            animal.draw(self.screen, self.big_font, animal_center)
             self.drawn_objects[(animal_center, c.ANIMAL_RADIUS)] = animal
 
     def draw_hovered_animal(self, sid: int, gender: Gender, pos: tuple[int, int]):
@@ -335,21 +427,21 @@ class ArkUI:
                 self.screen,
                 self.big_font,
                 f"{num_male}M",
-                (info_pane_x + 35, y),
-                align="left",
+                (info_pane_x + 100, y),
+                align="right",
                 color=c.MALE_ANIMAL_COLOR,
             )
             write_at(
                 self.screen,
                 self.big_font,
                 f"{num_female}F",
-                (info_pane_x + 90, y),
-                align="left",
+                (info_pane_x + 180, y),
+                align="right",
                 color=c.FEMALE_ANIMAL_COLOR,
             )
 
         y = base_y
-        x = info_pane_x + 160
+        x = info_pane_x + 190
         write_at(self.screen, self.big_font, f"Helpers", (x, y), align="left")
         for helper in self.engine.helpers:
             if helper.kind == Kind.Noah:
@@ -373,14 +465,20 @@ class ArkUI:
         mask.fill((0, 0, 0, 50))
 
         for helper in self.engine.helpers:
-            grid_center = coords_to_px(*helper.position)
+            if not self.coords_fit_in_grid(*helper.position):
+                continue
+
+            grid_center = self.coords_to_px(*helper.position)
             center = grid_center[0] - grid.x, grid_center[1] - grid.y
             radius = km_to_px(c.MAX_SIGHT_KM)
 
             pygame.draw.circle(mask, (0, 0, 0, 0), center, radius)
 
         for helper in self.engine.helpers:
-            grid_center = coords_to_px(*helper.position)
+            if not self.coords_fit_in_grid(*helper.position):
+                continue
+
+            grid_center = self.coords_to_px(*helper.position)
             center = grid_center[0] - grid.x, grid_center[1] - grid.y
             radius = km_to_px(c.MAX_SIGHT_KM)
 
@@ -410,6 +508,17 @@ class ArkUI:
             ):
                 self.running = False
 
+            # left mouse click
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                x, y = event.pos
+
+                for cell, val in self.drawn_cells.items():
+                    (w, n), d = cell
+                    map_x, map_y = val
+
+                    if w <= x <= w + d and n <= y <= n + d:
+                        self.selected_cell = (map_x, map_y)
+
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     self.paused = not self.paused
@@ -425,6 +534,7 @@ class ArkUI:
             self.draw_grid()
             self.draw_objects()
             self.draw_info_panel()
+            self.draw_map()
             self.draw_debug_info()
             self.draw_if_hovered()
 
