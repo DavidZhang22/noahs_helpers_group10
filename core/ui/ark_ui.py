@@ -1,4 +1,5 @@
 import pygame
+from typing import Callable
 
 from core.animal import Animal, Gender
 from core.ark import Ark
@@ -55,6 +56,9 @@ class ArkUI:
 
         self.hz = c.DEFAULT_TURNS_PER_SECOND
         self.hzs = c.ALL_TURNS_PER_SECOND
+
+        self.scrolls: list[Callable[[int, int, int], None]] = []
+        self.scroll_deltas: dict[str, int] = {}
 
     def coords_fit_in_grid(self, x: float, y: float) -> bool:
         west_x, east_x, north_y, south_y = self.get_w_e_n_s()
@@ -340,14 +344,8 @@ class ArkUI:
         y += c.MARGIN_Y
 
         last_msg = self.engine.last_messages[helper.id]
-        if last_msg is not None:
-            write_at(
-                self.screen,
-                self.small_font,
-                f"Last msg: 0b{last_msg:08b}={last_msg}",
-                (margined_x, y),
-                align="left",
-            )
+        if last_msg:
+            helper.draw_message(self.screen, self.big_font, (margined_x, y), last_msg)
 
     def draw_animals_on_map(self):
         for animal, cell in self.engine.free_animals.items():
@@ -501,20 +499,88 @@ class ArkUI:
             )
 
         y = base_y
-        x = info_pane_x + 190
+        x = info_pane_x + 185
         write_at(self.screen, self.big_font, "Helpers", (x, y), align="left")
+
+        west, north, east, south = (
+            x,
+            y + 20,
+            c.SCREEN_WIDTH,
+            c.SCREEN_HEIGHT - c.MAP_PX - c.MARGIN_Y - 5,
+        )
+        helpers_box = pygame.Rect(west, north, east - west, south - north)
+
+        helper_box_height = max(0, c.INFO_HELPER_HEIGHT * len(self.engine.helpers))
+
+        def scroll_helpers_box(mx: int, my: int, delta: int):
+            if not (west <= mx <= east and north <= my <= south):
+                return
+
+            key = scroll_helpers_box.__name__
+            self.scroll_deltas[key] = max(
+                0,
+                min(
+                    self.scroll_deltas[key] - 15 * delta,
+                    helper_box_height - (south - north),
+                ),
+            )
+
+        if scroll_helpers_box.__name__ not in self.scroll_deltas:
+            self.scroll_deltas[scroll_helpers_box.__name__] = 0
+            self.scrolls.append(scroll_helpers_box)
+
+        helpers_surface = pygame.Surface(
+            (helpers_box.w, helper_box_height), pygame.SRCALPHA
+        )
+
+        y = 10
+        x = 0
+
         for helper in self.engine.helpers:
             if helper.kind == Kind.Noah:
-                continue
-            y += 30
-            write_at(
-                self.screen,
-                self.big_font,
-                f"{helper.get_short_name()}: ",
-                (x, y),
-                align="left",
-            )
-            helper.draw_flock(self.screen, self.big_font, (x + 60, y))
+                write_at(
+                    helpers_surface,
+                    self.big_font,
+                    f"{helper.get_short_name()}: no flock",
+                    (x, y),
+                    align="left",
+                )
+            else:
+                write_at(
+                    helpers_surface,
+                    self.big_font,
+                    f"{helper.get_short_name()}: ",
+                    (x, y),
+                    align="left",
+                )
+                helper.draw_flock(helpers_surface, self.big_font, (x + 60, y))
+
+            incr_y = y + c.INFO_HELPER_HEIGHT // 2 - 5
+
+            msg = self.engine.last_messages[helper.id]
+            if msg:
+                helper.draw_message(helpers_surface, self.small_font, (x, incr_y), msg)
+            else:
+                write_at(
+                    helpers_surface,
+                    self.small_font,
+                    "no msg",
+                    (x, incr_y),
+                    align="left",
+                )
+
+            y += c.INFO_HELPER_HEIGHT
+
+        # pygame.draw.rect(self.screen, (0, 0, 0), helpers_box, 1)
+        self.screen.set_clip(helpers_box)
+        self.screen.blit(
+            helpers_surface,
+            (
+                helpers_box.x,
+                helpers_box.y - self.scroll_deltas[scroll_helpers_box.__name__],
+            ),
+        )
+        self.screen.set_clip(None)
 
     def draw_debug_helper_screens(self):
         grid = pygame.Rect(
@@ -608,6 +674,12 @@ class ArkUI:
             elif pygame.key.get_pressed()[pygame.K_PERIOD] and self.paused:
                 self.step_simulation()
 
+            # scroll
+            elif event.type == pygame.MOUSEWHEEL:
+                delta = event.y
+                x, y = pygame.mouse.get_pos()
+                [handle_scroll(x, y, delta) for handle_scroll in self.scrolls]
+
     def run(self) -> float:
         while self.running:
             self.screen.fill(self.bg_color)
@@ -622,9 +694,10 @@ class ArkUI:
 
             if not self.paused:
                 self.step_simulation()
+                self.clock.tick(self.hz)
 
             pygame.display.flip()
-            self.clock.tick(self.hz)
+            self.clock.tick(60)
 
         pygame.quit()
 

@@ -153,6 +153,22 @@ class Player(ABC):
 
             x += 40
 
+    @final
+    def draw_message(
+        self,
+        screen: pygame.Surface,
+        font: pygame.font.Font,
+        start_pos: tuple[int, int],
+        msg: int,
+    ):
+        write_at(
+            screen,
+            font,
+            f"msg 0b{msg:08b}={msg}",
+            start_pos,
+            align="left",
+        )
+
     @abstractmethod
     def check_surroundings(self, snapshot: HelperSurroundingsSnapshot) -> int:
         raise Exception("not implemented")

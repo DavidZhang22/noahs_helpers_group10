@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+from os import confstr
 from random import random, choice
 
 from core.action import Action, Move, Obtain
@@ -26,6 +28,7 @@ class RandomPlayer(Player):
         print(f"I am {self}")
 
         self.is_raining = False
+        self.hellos_received = []
 
     def _get_my_cell(self) -> CellView:
         xcell, ycell = tuple(map(int, self.position))
@@ -62,15 +65,28 @@ class RandomPlayer(Player):
         self.sight = snapshot.sight
         self.is_raining = snapshot.is_raining
 
-        msg = snapshot.time_elapsed + self.id
+        # if I didn't receive any messages, broadcast "hello"
+        # a "hello" message is the
+        if len(self.hellos_received) == 0:
+            msg = 1 << (self.id % 8)
+        else:
+            # else, acknowledge all "hello"'s I got last turn
+            # do this with a bitwise OR of all IDs I got
+            msg = 0
+            for hello in self.hellos_received:
+                msg |= hello
+            self.hellos_received = []
+
         if not self.is_message_valid(msg):
             msg = msg & 0xFF
 
         return msg
 
     def get_action(self, messages: list[Message]) -> Action | None:
-        # for msg in messages:
-        #     print(f"{self.id}: got {msg.contents} from {msg.from_helper.id}")
+        for msg in messages:
+            if 1 << (msg.from_helper.id % 8) == msg.contents:
+                print(f'{self.id}: got "hello" from {msg.from_helper.id}')
+                self.hellos_received.append(msg.contents)
 
         # noah shouldn't do anything
         if self.kind == Kind.Noah:
